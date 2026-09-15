@@ -1,5 +1,5 @@
 //! Pure profile resolution; catalogs, labels and UI metadata belong to hosts.
-use crate::{dynamics::random, geometry::Capture, types::*};
+use crate::{dynamics::random, geometry::Capture, types::*, Nibbles, Segment};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
@@ -11,45 +11,49 @@ use std::collections::BTreeMap;
     serde(deny_unknown_fields, rename_all = "camelCase")
 )]
 pub struct Fish {
-    /// Fish pull multiplier, 0.4..=1.6.
+    /// Fish pull multiplier, 0..=100
     pub strength: f64,
-    /// Fish speed scale in normalized units per second, 0.15..=0.65.
+    /// Fish speed scale in normalized units per second, 0..=60
     pub fish_speed: f64,
-    /// Surge duration in seconds before jitter, 0.5..=3.0.
+    /// Surge duration in seconds before jitter, DT..=600
     pub surge: f64,
-    /// Rest duration in seconds before jitter, 0.4..=3.0.
+    /// Rest duration in seconds before jitter, DT..=600
     pub rest: f64,
-    /// Energy loss coefficient per second, 0.03..=0.25.
+    /// Energy loss coefficient per second, 0..=60
     pub fatigue: f64,
-    /// Energy recovery coefficient per second, 0.05..=0.4.
+    /// Energy recovery coefficient per second, 0..=60
     pub recovery: f64,
-    /// Hook opportunity in seconds, 0.5..=2.0; expiry takes precedence over input.
+    /// Hook opportunity in seconds, DT..=600; expiry takes precedence over input.
     pub bite_window: f64,
-    /// Preferred vertical target center, 0.2..=0.8.
+    /// Preferred vertical target center, 0..=1
     pub target_center: f64,
-    /// Vertical target distribution scale, 0.2..=1.0.
+    /// Vertical target distribution scale, 0..=1
     pub target_spread: f64,
-    /// Vertical target wander during rest, 0.03..=0.3.
+    /// Vertical target wander during rest, 0..=1
     pub rest_wander: f64,
     /// Host-defined bait preference key, at most 64 UTF-8 bytes.
     pub preference: String,
     /// Positive base selection weight, at least `f64::MIN_POSITIVE` and at most 10.
     pub pond_weight: f64,
+    /// Optional fish-specific sequence; empty inherits the definition pattern.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub pattern: Vec<Segment>,
 }
 impl Fish {
     /// Check finite values, inclusive bounds and cross-field constraints.
     /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
-        bounded(self.strength, 0.4, 1.6, "fish.strength")?;
-        bounded(self.fish_speed, 0.15, 0.65, "fish.fishSpeed")?;
-        bounded(self.surge, 0.5, 3.0, "fish.surge")?;
-        bounded(self.rest, 0.4, 3.0, "fish.rest")?;
-        bounded(self.fatigue, 0.03, 0.25, "fish.fatigue")?;
-        bounded(self.recovery, 0.05, 0.4, "fish.recovery")?;
-        bounded(self.bite_window, 0.5, 2.0, "fish.biteWindow")?;
-        bounded(self.target_center, 0.2, 0.8, "fish.targetCenter")?;
-        bounded(self.target_spread, 0.2, 1.0, "fish.targetSpread")?;
-        bounded(self.rest_wander, 0.03, 0.3, "fish.restWander")?;
+        crate::program::validate_pattern(&self.pattern)?;
+        bounded(self.strength, 0.0, 100.0, "fish.strength")?;
+        bounded(self.fish_speed, 0.0, 60.0, "fish.fishSpeed")?;
+        bounded(self.surge, DT, 600.0, "fish.surge")?;
+        bounded(self.rest, DT, 600.0, "fish.rest")?;
+        bounded(self.fatigue, 0.0, 60.0, "fish.fatigue")?;
+        bounded(self.recovery, 0.0, 60.0, "fish.recovery")?;
+        bounded(self.bite_window, DT, 600.0, "fish.biteWindow")?;
+        bounded(self.target_center, 0.0, 1.0, "fish.targetCenter")?;
+        bounded(self.target_spread, 0.0, 1.0, "fish.targetSpread")?;
+        bounded(self.rest_wander, 0.0, 1.0, "fish.restWander")?;
         bounded(self.pond_weight, f64::MIN_POSITIVE, 10.0, "pondWeight")?;
         if self.preference.len() > 64 {
             return Err("preference too long".into());
@@ -65,29 +69,34 @@ impl Fish {
     serde(deny_unknown_fields, rename_all = "camelCase")
 )]
 pub struct Rod {
-    /// Tackle window side length in normalized units, 0.12..=0.45.
+    /// Tackle window side length in normalized units, 0.001..=1
     pub window_size: f64,
-    /// Maximum progress gain per second, 0.02..=0.2.
+    /// Maximum progress gain per second, 0..=60
     pub reel_rate: f64,
-    /// Divisor converting pull into normalized strain, 1.0..=2.0.
+    /// Divisor converting pull into normalized strain, 0.01..=100
     pub line_capacity: f64,
-    /// Control acceleration in normalized units per second squared, 1.8..=5.0.
+    /// Control acceleration in normalized units per second squared, 0..=3600
     pub tackle_acceleration: f64,
-    /// Velocity damping coefficient per second, 2.5..=6.0.
+    /// Velocity damping coefficient per second, 0..=60
     pub tackle_damping: f64,
-    /// Maximum tackle speed in normalized units per second, 0.55..=1.1.
+    /// Maximum tackle speed in normalized units per second, 0..=60
     pub tackle_speed: f64,
 }
 impl Rod {
     /// Check finite values, inclusive bounds and cross-field constraints.
     /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
-        bounded(self.window_size, 0.12, 0.45, "rod.windowSize")?;
-        bounded(self.reel_rate, 0.02, 0.2, "rod.reelRate")?;
-        bounded(self.line_capacity, 1.0, 2.0, "rod.lineCapacity")?;
-        bounded(self.tackle_acceleration, 1.8, 5.0, "rod.tackleAcceleration")?;
-        bounded(self.tackle_damping, 2.5, 6.0, "rod.tackleDamping")?;
-        bounded(self.tackle_speed, 0.55, 1.1, "rod.tackleSpeed")?;
+        bounded(self.window_size, 0.001, 1.0, "rod.windowSize")?;
+        bounded(self.reel_rate, 0.0, 60.0, "rod.reelRate")?;
+        bounded(self.line_capacity, 0.01, 100.0, "rod.lineCapacity")?;
+        bounded(
+            self.tackle_acceleration,
+            0.0,
+            3600.0,
+            "rod.tackleAcceleration",
+        )?;
+        bounded(self.tackle_damping, 0.0, 60.0, "rod.tackleDamping")?;
+        bounded(self.tackle_speed, 0.0, 60.0, "rod.tackleSpeed")?;
         Ok(())
     }
 }
@@ -124,6 +133,17 @@ impl Bait {
         Ok(())
     }
 }
+/// How profile resolution obtains waiting and hook timing.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
+pub enum TimingPolicy {
+    /// Original 1.5–3 second wait and prototype timing caps, preserving old recipes.
+    #[default]
+    Classic,
+    /// Use the definition's wait range, scaled by bait, with broad structural caps.
+    Configured,
+}
 /// Base rules before applying a fish, rod and bait loadout.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -141,9 +161,25 @@ pub struct Definition {
     pub parameters: Parameters,
     /// Rectangle, or a polygon for two-dimensional tracking.
     pub capture: Capture,
-    /// Mode-specific hook bonus in seconds, 0..=0.5.
+    /// Mode-specific hook bonus in seconds, 0..=600.
     #[cfg_attr(feature = "serde", serde(default))]
     pub hook_bonus: f64,
+    /// Default sequence, overridden by a nonempty fish pattern in struggle modes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub pattern: Vec<Segment>,
+    /// False-bite sequence before hooking.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub nibbles: Nibbles,
+    /// Timing resolution policy; Classic preserves previous profile results.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub timing: TimingPolicy,
+    /// Encounter tick limit; defaults to 3600.
+    #[cfg_attr(feature = "serde", serde(default = "default_limit"))]
+    pub max_ticks: u32,
+}
+#[cfg(feature = "serde")]
+fn default_limit() -> u32 {
+    3600
 }
 /// The three profiles used to resolve an encounter.
 #[derive(Debug, Clone)]
@@ -230,7 +266,7 @@ pub fn resolve(d: &Definition, l: &Loadout, seed: u32) -> Result<Encounter> {
     l.rod.validate()?;
     l.bait.validate()?;
     d.parameters.validate()?;
-    bounded(d.hook_bonus, 0.0, 0.5, "hookBonus")?;
+    bounded(d.hook_bonus, 0.0, 600.0, "hookBonus")?;
     let mut p = d.parameters.clone();
     let f = &l.fish;
     let r = &l.rod;
@@ -255,25 +291,35 @@ pub fn resolve(d: &Definition, l: &Loadout, seed: u32) -> Result<Encounter> {
         p.tackle_damping = r.tackle_damping;
         p.tackle_speed = r.tackle_speed;
     }
+    crate::program::validate_pattern(&d.pattern)?;
+    let configured = d.timing == TimingPolicy::Configured;
     let affinity = b.affinity.get(&f.preference).copied().unwrap_or(1.0);
     p.wait_min = cap(
-        1.5 / (b.attraction * affinity),
-        0.4,
-        5.0,
+        (if configured {
+            d.parameters.wait_min
+        } else {
+            1.5
+        }) / (b.attraction * affinity),
+        if configured { DT } else { 0.4 },
+        if configured { 600.0 } else { 5.0 },
         "Minimum wait",
         &mut notes,
     );
     p.wait_max = cap(
-        3.0 / (b.attraction * affinity),
-        0.4,
-        8.0,
+        (if configured {
+            d.parameters.wait_max
+        } else {
+            3.0
+        }) / (b.attraction * affinity),
+        if configured { DT } else { 0.4 },
+        if configured { 600.0 } else { 8.0 },
         "Maximum wait",
         &mut notes,
     );
     p.bite_window = cap(
         f.bite_window + d.hook_bonus + b.bite_bonus,
-        0.5,
-        2.0,
+        if configured { DT } else { 0.5 },
+        if configured { 600.0 } else { 2.0 },
         "Bite duration",
         &mut notes,
     );
@@ -282,6 +328,13 @@ pub fn resolve(d: &Definition, l: &Loadout, seed: u32) -> Result<Encounter> {
         dimensions: d.dimensions,
         parameters: p,
         capture: d.capture.clone(),
+        pattern: if d.mode != Mode::Hook && !f.pattern.is_empty() {
+            f.pattern.clone()
+        } else {
+            d.pattern.clone()
+        },
+        nibbles: d.nibbles.clone(),
+        max_ticks: d.max_ticks,
     };
     config.validate()?;
     Ok(Encounter {

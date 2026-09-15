@@ -1,12 +1,12 @@
 # Fishing
 
 Pure, bounded state machines and coupled dynamics for casual fishing minigames.
-**Draft 0.1, schema revision 1.** Five Rust source files, no default dependencies,
+**Draft 0.2, schema revision 2.** Six Rust source files, no default dependencies,
 no unsafe code, no clock, renderer, runtime, or hidden randomness.
 
 ```toml
 [dependencies]
-fishing = "0.1.0"
+fishing = "0.2.0"
 ```
 
 ```rust
@@ -18,6 +18,7 @@ let rules = Config {
     dimensions: 1,
     parameters: Parameters::default(),
     capture: Capture::Rectangle,
+    ..Config::default()
 };
 let state = create_state(42, &rules)?;
 let next = step(&state, Input { primary: 1.0, steer: 0.0 }, &rules)?;
@@ -43,8 +44,25 @@ The lifecycle is ready → waiting → bite → optional struggle → caught/esc
 Hook-only, pressure/release, 1D tracking and 2D tracking share that lifecycle.
 During struggle, progress, tension and energy influence one another; spatial
 modes couple them to capture overlap. Polygon capture supports one optional
-hole. Terminal states absorb further input. Encounters are bounded to 3,600
-advancing ticks; waiting at ready consumes none.
+hole. Terminal states absorb further input. Encounters default to 3,600 advancing ticks, with a configurable
+limit up to 36,000; waiting at ready consumes none.
+
+Fish can use a repeating `Vec<Segment>` (at most 16): each segment specifies
+its behavior label, duration/jitter, pull intensity, speed multiplier and target
+rule (`Keep`, `Hold`, `Wander`, `Point`, or `Opposite`). An empty pattern preserves
+the original rest/warning/surge cycle. Optional `Nibbles` add false bites before
+the real hook window. Both extensions keep all execution state in the snapshot.
+
+Numerical validation enforces broad finite bounds; `Parameters::validate_recommended`
+optionally checks the original demo tuning ranges. Loadout resolution retains
+classic timing by default; select `TimingPolicy::Configured` to use the definition's
+wait range and broader bite durations.
+
+**Migrating from 0.1:** schema-1 snapshots are rejected. For an original recipe,
+explicitly set the snapshot version to 2 and initialize `segmentIndex` and
+`nibblesLeft` to zero. Existing JSON configs receive disabled extension defaults.
+Rust struct literals need the new fields (`..Config::default()` is convenient).
+See the specification for profile additions and exact compatibility boundaries.
 
 Enable `features = ["serde"]` for serialization of all public data records.
 Deserialization checks wire structure; call the validation methods or public
@@ -59,8 +77,9 @@ bit-identical results across languages or architectures.
 
 The [fishing-examples repository](https://github.com/urcades/fishing-examples)
 consumes this crate. It owns the four playable demos, WebAssembly/JSON adapters,
-CLI, profile catalogs, Python port, schemas and shared conformance fixtures.
-Those are application and porting concerns; they are not shipped in the crate.
+CLI, profile catalogs, Python port and wire schemas. A representative conformance
+corpus ships with this crate; the examples retain the full historical corpus and
+check both ports against it.
 
 Run `cargo test`, `cargo test --all-features`, and
 `cargo clippy --all-targets --all-features -- -D warnings` to check the library.

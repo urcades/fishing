@@ -1,17 +1,18 @@
 //! Wire types and validation. Profiles and example names do not live here.
 use crate::geometry::{validate_capture, Capture};
+use crate::program::{Nibbles, Segment};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 /// Validated core result. Error strings are diagnostics, not part of the wire contract.
 pub type Result<T> = std::result::Result<T, String>;
 /// State schema revision, independent of the crate version.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 2;
 /// Fixed simulation frequency in ticks per second.
 pub const HZ: u32 = 60;
 /// Duration of one simulation tick in seconds.
 pub const DT: f64 = 1.0 / 60.0;
-/// Maximum advancing ticks per encounter (60 simulated seconds).
-pub const MAX_TICKS: u32 = 3600;
+/// Absolute tick ceiling (600 simulated seconds); each config sets its own lower limit.
+pub const MAX_TICKS: u32 = 36_000;
 /// Half-width of the normalized fish capture interval/square.
 pub const FISH_RADIUS: f64 = 0.03;
 /// Mechanism used during an encounter; combine with [`Config::dimensions`].
@@ -37,6 +38,8 @@ pub enum Phase {
     Waiting,
     /// A fresh primary press can hook before the deadline.
     Bite,
+    /// False bite: wait for it to end; a fresh hook here loses the fish.
+    Nibble,
     /// Active pressure or tracking loop.
     Struggle,
     /// Fish landed; further input leaves the state unchanged.
@@ -63,6 +66,8 @@ pub enum Behavior {
 pub enum Reason {
     /// Hook deadline expired.
     MissedBite,
+    /// A fresh hook was attempted during a nibble.
+    EarlyHook,
     /// Raw strain reached or exceeded 1.
     LineBroke,
     /// Raw progress reached or fell below 0.
@@ -81,6 +86,8 @@ pub enum Event {
     Cast,
     /// A fresh primary press can hook before the deadline.
     Bite,
+    /// False bite: wait for it to end; a fresh hook here loses the fish.
+    Nibble,
     /// A fresh hook input was accepted.
     Hooked,
     /// Fish recovers with reduced pull and slower movement.
@@ -102,51 +109,51 @@ pub enum Event {
     serde(default, deny_unknown_fields, rename_all = "camelCase")
 )]
 pub struct Parameters {
-    /// Fish pull multiplier, 0.4..=1.6.
+    /// Fish pull multiplier, 0..=100
     pub strength: f64,
-    /// Surge duration in seconds before jitter, 0.5..=3.0.
+    /// Surge duration in seconds before jitter, DT..=600
     pub surge: f64,
-    /// Rest duration in seconds before jitter, 0.4..=3.0.
+    /// Rest duration in seconds before jitter, DT..=600
     pub rest: f64,
-    /// Energy loss coefficient per second, 0.03..=0.25.
+    /// Energy loss coefficient per second, 0..=60
     pub fatigue: f64,
-    /// Maximum progress gain per second, 0.02..=0.2.
+    /// Maximum progress gain per second, 0..=60
     pub reel_rate: f64,
-    /// Progress loss coefficient per second, 0.02..=0.2.
+    /// Progress loss coefficient per second, 0..=60
     pub escape_rate: f64,
-    /// Baseline pull while reeling or aligned, 0.1..=0.5.
+    /// Baseline pull while reeling or aligned, 0..=100
     pub base_tension: f64,
-    /// Tension response time in seconds, 0.3..=2.0.
+    /// Tension response time in seconds, DT..=600
     pub response: f64,
-    /// Energy recovery coefficient per second, 0.05..=0.4.
+    /// Energy recovery coefficient per second, 0..=60
     pub recovery: f64,
-    /// Warning duration in seconds before jitter, 0.3..=1.0.
+    /// Warning duration in seconds before jitter, DT..=600
     pub warning: f64,
-    /// Hook opportunity in seconds, 0.5..=2.0; expiry takes precedence over input.
+    /// Hook opportunity in seconds, DT..=600; expiry takes precedence over input.
     pub bite_window: f64,
-    /// Fractional duration variation, 0.0..=0.2.
+    /// Fractional duration variation, 0..=1
     pub jitter: f64,
-    /// Fish speed scale in normalized units per second, 0.15..=0.65.
+    /// Fish speed scale in normalized units per second, 0..=60
     pub fish_speed: f64,
-    /// Tackle window side length in normalized units, 0.12..=0.45.
+    /// Tackle window side length in normalized units, 0.001..=1
     pub window_size: f64,
-    /// Divisor converting pull into normalized strain, 1.0..=2.0.
+    /// Divisor converting pull into normalized strain, 0.01..=100
     pub line_capacity: f64,
-    /// Control acceleration in normalized units per second squared, 1.8..=5.0.
+    /// Control acceleration in normalized units per second squared, 0..=3600
     pub tackle_acceleration: f64,
-    /// Velocity damping coefficient per second, 2.5..=6.0.
+    /// Velocity damping coefficient per second, 0..=60
     pub tackle_damping: f64,
-    /// Maximum tackle speed in normalized units per second, 0.55..=1.1.
+    /// Maximum tackle speed in normalized units per second, 0..=60
     pub tackle_speed: f64,
-    /// Minimum wait in seconds, 0.4..=5.0; must not exceed `wait_max`.
+    /// Minimum wait in seconds, DT..=600; must not exceed `wait_max`.
     pub wait_min: f64,
-    /// Maximum wait in seconds, 0.4..=8.0.
+    /// Maximum wait in seconds, DT..=600
     pub wait_max: f64,
-    /// Preferred vertical target center, 0.2..=0.8.
+    /// Preferred vertical target center, 0..=1
     pub target_center: f64,
-    /// Vertical target distribution scale, 0.2..=1.0.
+    /// Vertical target distribution scale, 0..=1
     pub target_spread: f64,
-    /// Vertical target wander during rest, 0.03..=0.3.
+    /// Vertical target wander during rest, 0..=1
     pub rest_wander: f64,
 }
 impl Default for Parameters {
@@ -182,6 +189,37 @@ impl Parameters {
     /// Check finite values, inclusive bounds and cross-field constraints.
     /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
+        bounded(self.strength, 0.0, 100.0, "strength")?;
+        bounded(self.surge, DT, 600.0, "surge")?;
+        bounded(self.rest, DT, 600.0, "rest")?;
+        bounded(self.fatigue, 0.0, 60.0, "fatigue")?;
+        bounded(self.reel_rate, 0.0, 60.0, "reelRate")?;
+        bounded(self.escape_rate, 0.0, 60.0, "escapeRate")?;
+        bounded(self.base_tension, 0.0, 100.0, "baseTension")?;
+        bounded(self.response, DT, 600.0, "response")?;
+        bounded(self.recovery, 0.0, 60.0, "recovery")?;
+        bounded(self.warning, DT, 600.0, "warning")?;
+        bounded(self.bite_window, DT, 600.0, "biteWindow")?;
+        bounded(self.jitter, 0.0, 1.0, "jitter")?;
+        bounded(self.fish_speed, 0.0, 60.0, "fishSpeed")?;
+        bounded(self.window_size, 0.001, 1.0, "windowSize")?;
+        bounded(self.line_capacity, 0.01, 100.0, "lineCapacity")?;
+        bounded(self.tackle_acceleration, 0.0, 3600.0, "tackleAcceleration")?;
+        bounded(self.tackle_damping, 0.0, 60.0, "tackleDamping")?;
+        bounded(self.tackle_speed, 0.0, 60.0, "tackleSpeed")?;
+        bounded(self.wait_min, DT, 600.0, "waitMin")?;
+        bounded(self.wait_max, DT, 600.0, "waitMax")?;
+        bounded(self.target_center, 0.0, 1.0, "targetCenter")?;
+        bounded(self.target_spread, 0.0, 1.0, "targetSpread")?;
+        bounded(self.rest_wander, 0.0, 1.0, "restWander")?;
+        if self.wait_min > self.wait_max {
+            return Err("waitMin exceeds waitMax".into());
+        }
+        Ok(())
+    }
+    /// Check the original prototype tuning ranges after structural validation.
+    /// This is an optional authoring recommendation, never required by step.
+    pub fn validate_recommended(&self) -> Result<()> {
         bounded(self.strength, 0.4, 1.6, "strength")?;
         bounded(self.surge, 0.5, 3.0, "surge")?;
         bounded(self.rest, 0.4, 3.0, "rest")?;
@@ -211,6 +249,7 @@ impl Parameters {
         Ok(())
     }
 }
+
 pub(crate) fn bounded(value: f64, min: f64, max: f64, name: &str) -> Result<()> {
     if !value.is_finite() || value < min || value > max {
         Err(format!("{name} must be finite and between {min} and {max}"))
@@ -232,6 +271,34 @@ pub struct Config {
     pub parameters: Parameters,
     /// Rectangle, or a polygon for two-dimensional tracking.
     pub capture: Capture,
+    /// Ordered fish segments; empty selects the original rest/warning/surge cycle.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub pattern: Vec<Segment>,
+    /// Optional false bites before the real bite. Count zero disables them.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub nibbles: Nibbles,
+    /// Encounter tick limit in 1..=MAX_TICKS; defaults to 3600 (60 seconds).
+    #[cfg_attr(
+        feature = "serde",
+        serde(default = "default_max_ticks", rename = "maxTicks")
+    )]
+    pub max_ticks: u32,
+}
+fn default_max_ticks() -> u32 {
+    3600
+}
+impl Default for Config {
+    fn default() -> Self {
+        Self {
+            mode: Mode::Tracking,
+            dimensions: 1,
+            parameters: Parameters::default(),
+            capture: Capture::Rectangle,
+            pattern: vec![],
+            nibbles: Nibbles::default(),
+            max_ticks: default_max_ticks(),
+        }
+    }
 }
 impl Config {
     /// Check finite values, inclusive bounds and cross-field constraints.
@@ -245,6 +312,14 @@ impl Config {
         }
         if self.dimensions != 2 && self.capture != Capture::Rectangle {
             return Err("polygon capture requires two dimensions".into());
+        }
+        if self.max_ticks == 0 || self.max_ticks > MAX_TICKS {
+            return Err("invalid encounter tick limit".into());
+        }
+        crate::program::validate_pattern(&self.pattern)?;
+        self.nibbles.validate()?;
+        if self.mode == Mode::Hook && !self.pattern.is_empty() {
+            return Err("hook mode has no fish behavior pattern".into());
         }
         self.parameters.validate()?;
         validate_capture(&self.capture)
@@ -318,7 +393,7 @@ pub struct State {
     pub phase: Phase,
     /// Advancing ticks elapsed in the current phase.
     pub phase_ticks: u32,
-    /// Current waiting/bite duration in ticks; zero for untimed phases.
+    /// Current waiting/nibble/bite duration in ticks; zero for untimed phases.
     pub duration: u32,
     /// Current fish effort behavior.
     pub behavior: Behavior,
@@ -340,6 +415,12 @@ pub struct State {
     pub rng: u32,
     /// Terminal outcome reason; `None` while nonterminal.
     pub reason: Option<Reason>,
+    /// Index in the custom fish pattern; zero for the original cycle.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub segment_index: u8,
+    /// Number of false bites still to enter in this encounter.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub nibbles_left: u8,
 }
 /// Host controls for one tick. Finite values are clamped to the documented ranges.
 #[derive(Debug, Clone, Copy, Default)]
@@ -411,7 +492,7 @@ impl State {
         if self.phase_ticks > self.tick || self.behavior_ticks > self.tick {
             return Err("elapsed phase/behavior time exceeds total time".into());
         }
-        if !self.is_terminal() && self.tick == MAX_TICKS {
+        if self.tick > c.max_ticks || (!self.is_terminal() && self.tick == c.max_ticks) {
             return Err("nonterminal state at tick limit".into());
         }
         for (n, v) in [
@@ -436,12 +517,39 @@ impl State {
         if self.phase == Phase::Struggle && c.mode == Mode::Hook {
             return Err("hook mode has no struggle".into());
         }
-        if matches!(self.phase, Phase::Waiting | Phase::Bite)
+        if matches!(self.phase, Phase::Waiting | Phase::Bite | Phase::Nibble)
             && (self.duration == 0 || self.phase_ticks >= self.duration)
         {
             return Err("invalid phase timer".into());
         }
+        if self.nibbles_left > c.nibbles.count
+            || (self.phase == Phase::Nibble && c.nibbles.count == 0)
+        {
+            return Err("invalid nibble state".into());
+        }
+        if (c.pattern.is_empty() && self.segment_index != 0)
+            || (!c.pattern.is_empty() && self.segment_index as usize >= c.pattern.len())
+        {
+            return Err("invalid segment index".into());
+        }
+        if self.phase == Phase::Struggle
+            && !c.pattern.is_empty()
+            && self.behavior != c.pattern[self.segment_index as usize].behavior
+        {
+            return Err("behavior does not match segment".into());
+        }
+        if self.phase == Phase::Struggle
+            && (self.behavior_duration == 0 || self.behavior_ticks >= self.behavior_duration)
+        {
+            return Err("invalid behavior timer".into());
+        }
         if c.mode == Mode::Tracking {
+            let max_pace = c
+                .pattern
+                .iter()
+                .map(|s| s.pace)
+                .reduce(f64::max)
+                .unwrap_or(1.7);
             let m = self.motion.as_ref().ok_or("tracking requires motion")?;
             for v in [
                 m.fish_position,
@@ -456,8 +564,8 @@ impl State {
             for v in [m.fish_velocity, m.fish_velocity_x] {
                 bounded(
                     v,
-                    -c.parameters.fish_speed * 1.7,
-                    c.parameters.fish_speed * 1.7,
+                    -c.parameters.fish_speed * max_pace,
+                    c.parameters.fish_speed * max_pace,
                     "fish velocity",
                 )?;
             }

@@ -6,6 +6,7 @@ fn config(mode: Mode, dimensions: u8) -> Config {
         dimensions,
         parameters: Parameters::default(),
         capture: Capture::Rectangle,
+        ..Config::default()
     }
 }
 
