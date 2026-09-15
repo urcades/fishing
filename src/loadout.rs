@@ -1,4 +1,5 @@
-//! Pure profile resolution; catalogs, labels and UI metadata belong to hosts.
+//! Optional, opinionated authoring helpers. Construct `Config` directly for other game rules.
+//! Profile ownership and bait formulas are conventions, not simulation requirements.
 use crate::{dynamics::random, geometry::Capture, types::*, Nibbles, Segment};
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
@@ -144,7 +145,8 @@ pub enum TimingPolicy {
     /// Use the definition's wait range, scaled by bait, with broad structural caps.
     Configured,
 }
-/// Base rules before applying a fish, rod and bait loadout.
+/// Base rules for the optional fish/rod/bait authoring model.
+/// Games with other preparation rules can construct [`Config`] directly.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(

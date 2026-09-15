@@ -32,13 +32,31 @@ likes. Keep the resolved configuration fixed during an encounter; persist it
 with the state to resume a run. Replay uses that configuration, the initial seed,
 and the same input sequence.
 
-| Function | Responsibility |
-| --- | --- |
-| `create_state(seed, config)` | Validate rules and create a ready state. |
-| `step(state, input, config)` | Return the next state and ordered events. |
-| `observe(state, config)` | Inspect overlap and instantaneous resource rates. |
-| `resolve(definition, loadout, seed)` | Apply fish, rod and bait attributes. |
-| `select(pool, bait, seed)` | Draw a fish and return the next RNG seed. |
+The simulation API is `Config`, `State`, `Input`, `create_state`, `step`, and
+`observe`. Construct `Config` directly when integrating your own game rules.
+
+| Layer | API | Responsibility |
+| --- | --- | --- |
+| Simulation | `create_state`, `step`, `observe` | Execute an encounter from explicit rules, input and state. |
+| Optional authoring | `Fish`, `Rod`, `Bait`, `Definition`, `resolve`, `select` | One convenient profile model, including specific equipment and bait formulas. |
+
+The authoring helpers are not required for protocol conformance. Their ownership
+choices (for example, rods supplying window size) are conventions, not universal
+fishing rules. A game may derive that same window size from skill, equipment,
+accessibility settings, or any combination, then pass the result to `Config`.
+
+World geography, casting aim, species availability, rarity, inventory, prices,
+and XP belong to the game. Resolve their mechanical effects before creating an
+encounter. Afterward, interpret the outcome and observations using the game's
+reward rules. Any new rule that changes the next simulated state must instead
+be explicitly represented in the protocol; hidden host callbacks break replay.
+
+Performance statistics can be a separate pure fold over the run. Resource scoring
+uses **pre-step** alignment: accumulate `observe(&state, &config)` only when the
+old state is in struggle and that tick advances. Include the tick that ends the
+struggle; exclude ready no-ops and terminal calls. What counts as a perfect catch
+and what it earns are game decisions. See the executable
+[game-boundary example](https://github.com/urcades/fishing-examples/blob/main/examples/game_rules.rs).
 
 The lifecycle is ready → waiting → bite → optional struggle → caught/escaped.
 Hook-only, pressure/release, 1D tracking and 2D tracking share that lifecycle.
@@ -71,6 +89,8 @@ build needs only the Rust standard library. This is not a `no_std` crate.
 
 [The specification](https://github.com/urcades/fishing/blob/main/spec/PROTOCOL.md)
 defines update ordering, equations, numeric bounds, RNG and terminal precedence.
+An independently implemented [TypeScript port](https://github.com/urcades/fishing-system)
+pins the protocol sources and checks against this published crate.
 Floating-point conformance requires exact discrete state/events and a 1e−12
 absolute tolerance at numerical checkpoints; it does not promise universal
 bit-identical results across languages or architectures.

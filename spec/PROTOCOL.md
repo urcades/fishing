@@ -18,6 +18,27 @@ Rust returns `Result<T, String>` on validated boundaries. The JSON transports us
 
 A full `Encounter` holds `version`, resolved `config`, starting `seed`, and up to three resolution notes. Use that same config for every tick. A replay bundles the resolved config, starting seed and ordered inputs. Resumption bundles that config and a full snapshot. Changing config mid-encounter is outside the contract. Mode/dimension/version mismatches are explicitly rejected.
 
+## Host boundary and optional authoring
+
+The simulation contract is resolved Config + seed + inputs → states and events.
+Direct Config construction is a first-class integration path. `resolve` and
+`select` define optional authoring conventions; a simulation port need not adopt
+their fish/rod/bait ownership model. A port claiming those helpers must reproduce
+their specified formulas and fixtures.
+
+Games own geography, casting aim, availability, rarity, inventory, progression,
+and rewards. They may map any of these to supported mechanics before an encounter.
+The resolved config remains fixed while stepping. Additional mechanics that affect
+a future tick require explicit simulation state/config/input and conformance tests.
+
+Games can fold observations into performance records without adding accumulated
+statistics to State. Sample the old state's observation for each advancing struggle
+tick, including its terminal transition. Sampling the returned state's alignment
+would measure geometry one tick later than scoring. Reward formulas, quality tiers,
+and the definition of "perfect" are host policy. Replaying the full game additionally
+requires its preparation/reward inputs, policy version and any separate random seed;
+the encounter replay alone guarantees only the encounter simulation.
+
 ## Mechanisms and state
 
 Config specifies `mode` and `dimensions`:

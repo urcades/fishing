@@ -47,7 +47,8 @@ pub enum Phase {
     /// Encounter lost; further input leaves the state unchanged.
     Escaped,
 }
-/// Fish effort cycle during struggle: rest, warning, then surge.
+/// Behavior labels. The classic cycle is rest/warning/surge; custom segments
+/// determine their own movement and intensity independently of these labels.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 #[cfg_attr(feature = "serde", serde(rename_all = "snake_case"))]
