@@ -1,0 +1,19 @@
+[package]
+name = "fishing-protocol"
+version = "0.1.0"
+edition = "2021"
+description = "Pure bounded fishing dynamics, portable by specification and conformance fixtures"
+repository = "https://github.com/urcades/fishing"
+publish = false
+
+[lib]
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+
+[profile.release]
+opt-level = "s"
+lto = true
+panic = "abort"
