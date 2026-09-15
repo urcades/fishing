@@ -1,9 +1,0 @@
-{
-  "mode": "hook",
-  "dimensions": 0,
-  "parameters": {},
-  "capture": {
-    "kind": "rectangle"
-  },
-  "hookBonus": 0.5
-}

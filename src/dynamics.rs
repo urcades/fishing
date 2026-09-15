@@ -1,5 +1,7 @@
 //! Fixed-step coupled dynamics. Every derivative reads the pre-step state.
 use crate::{geometry, types::*};
+/// Advance the specified wrapping 32-bit LCG; return `(next_seed, value_in_0_to_1)`.
+/// Zero is a valid seed. This is replay randomness, not a cryptographic generator.
 pub fn random(rng: u32) -> (u32, f64) {
     let next = rng.wrapping_mul(1664525).wrapping_add(1013904223);
     (next, next as f64 / 4294967296.0)
@@ -7,6 +9,8 @@ pub fn random(rng: u32) -> (u32, f64) {
 fn ticks(seconds: f64) -> u32 {
     ((seconds * HZ as f64 + 0.5).floor() as u32).max(1)
 }
+/// Create a ready state from an explicit seed and validated rules.
+/// No random draw is consumed until the first cast. Returns an error for invalid rules.
 pub fn create_state(seed: u32, c: &Config) -> Result<State> {
     c.validate()?;
     Ok(State {
@@ -147,6 +151,8 @@ fn rates(s: &State, c: &Config, primary: f64) -> Observation {
         alignment_y: qy,
     }
 }
+/// Inspect overlap and instantaneous rates without advancing time or RNG.
+/// Uses the stored primary input and rejects invalid configuration/state pairs.
 pub fn observe(s: &State, c: &Config) -> Result<Observation> {
     c.validate()?;
     s.validate(c)?;
@@ -233,7 +239,10 @@ fn finish(mut s: State, phase: Phase, reason: Reason) -> Transition {
         }],
     }
 }
-/// Advance one tick. No clocks, mutation of arguments, callbacks or IO.
+/// Advance exactly one 1/60-second tick, returning state and ordered events.
+/// No clocks, mutation of arguments, callbacks or IO. Config/state must match;
+/// nonfinite controls are rejected and finite controls are clamped.
+/// Idle ready states and terminal states do not advance.
 /// Loss thresholds inspect raw results, before clamping. Behavior changes
 /// follow integration; new movement contributes to alignment next tick.
 pub fn step(s: &State, input: Input, c: &Config) -> Result<Transition> {

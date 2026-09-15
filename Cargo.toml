@@ -2,18 +2,20 @@
 name = "fishing-protocol"
 version = "0.1.0"
 edition = "2021"
-description = "Pure bounded fishing dynamics, portable by specification and conformance fixtures"
+description = "Pure, bounded state machines and coupled dynamics for casual fishing minigames"
+license = "MIT OR Apache-2.0"
 repository = "https://github.com/urcades/fishing"
-publish = false
+readme = "README.md"
+keywords = ["fishing", "gamedev", "simulation", "state-machine", "deterministic"]
+categories = ["game-development", "simulation"]
+include = ["src/**", "tests/**", "spec/PROTOCOL.md", "README.md", "LICENSE-*"]
 
-[lib]
-crate-type = ["rlib", "cdylib"]
+[features]
+default = []
+serde = ["dep:serde"]
 
 [dependencies]
-serde = { version = "=1.0.229", features = ["derive"] }
-serde_json = { version = "=1.0.151", features = ["float_roundtrip"] }
+serde = { version = "1.0", features = ["derive"], optional = true }
 
-[profile.release]
-opt-level = "s"
-lto = true
-panic = "abort"
+[package.metadata.docs.rs]
+all-features = true

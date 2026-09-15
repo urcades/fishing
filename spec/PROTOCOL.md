@@ -76,7 +76,7 @@ The current Rust/WASM compatibility tests also preserve exact historic SHA-256 t
 
 ## Coupled resource laws
 
-Parameters and their defaults/bounds are in [parameters.json](parameters.json). Let `F = strength × E × intensity`, where intensity is 1 during surge, .15 during rest/warning. C is lineCapacity; transmitted effort is T×C. All derivatives are zero outside struggle; capture observation can still be shown.
+Parameters and their defaults/bounds are in [parameters.json](https://github.com/urcades/fishing-examples/blob/main/spec/parameters.json) and the Rust API field documentation. Let `F = strength × E × intensity`, where intensity is 1 during surge, .15 during rest/warning. C is lineCapacity; transmitted effort is T×C. All derivatives are zero outside struggle; capture observation can still be shown.
 
 For tracking, q is the capture fraction:
 
@@ -135,10 +135,10 @@ Optional `select` accepts 1..64 fish profiles. Weight=`pondWeight*affinity`; nor
 
 ## Validation, bounds and extensions
 
-Schemas are in [fishing.schema.json](fishing.schema.json); select the named `$defs` entry corresponding to the value being validated. Defaults are expanded before simulation. Resolved configs should be stored in full. Unknown members are rejected. Integer fields use integer JSON values. Semantic validation additionally checks mode/dimensions, geometry, wait ordering, matching state/config, terminal reasons, required/null motion, timer consistency and config-dependent velocity bounds. Validation checks structural invariants, not proof that a snapshot was reachable from a particular seed.
+Schemas are in [fishing.schema.json](https://github.com/urcades/fishing-examples/blob/main/spec/fishing.schema.json); select the named `$defs` entry corresponding to the value being validated. Defaults are expanded before simulation. Resolved configs should be stored in full. Unknown members are rejected. Integer fields use integer JSON values. Semantic validation additionally checks mode/dimensions, geometry, wait ordering, matching state/config, terminal reasons, required/null motion, timer consistency and config-dependent velocity bounds. Validation checks structural invariants, not proof that a snapshot was reachable from a particular seed.
 
 P/T/E, primary and positions are [0,1]; velocities use finite configured caps. Total and elapsed timers are bounded by 3600, elapsed phase/behavior timers cannot exceed total ticks. Every active tick advances the total tick; terminal resolution occurs by 3600. Ready time is deliberately outside simulated encounter time. Hosts can record at most 3600 advancing inputs and 3601 snapshots per encounter. No requirement is imposed on how many encounters a host may manage.
 
-The optional JSON CLI/WASM transport caps one request at 65,536 bytes. Native typed calls validate collection cardinalities. All allocation and clock scheduling at an embedding boundary remain host responsibilities. The included WASM module has no imports; its JS bridge releases each input/output allocation after a call.
+The optional JSON CLI/WASM transport caps one request at 65,536 bytes. Native typed calls validate collection cardinalities. All allocation and clock scheduling at an embedding boundary remain host responsibilities. The examples repository’s WASM module has no imports; its JS bridge releases each input/output allocation after a call.
 
 A new mechanic, state layout, RNG algorithm/draw order, arithmetic policy or integration order requires an explicit versioned change with new fixtures. Adding example profiles/valid geometry within existing bounds is data-only. Draft fixtures have provenance from the accepted demo; never silently regenerate expected results from an implementation merely to make a failing test pass.

@@ -1,24 +1,44 @@
 //! Pure profile resolution; catalogs, labels and UI metadata belong to hosts.
 use crate::{dynamics::random, geometry::Capture, types::*};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+/// Fish mechanics and pond-selection weight; presentation names belong to the host.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(deny_unknown_fields, rename_all = "camelCase")
+)]
 pub struct Fish {
+    /// Fish pull multiplier, 0.4..=1.6.
     pub strength: f64,
+    /// Fish speed scale in normalized units per second, 0.15..=0.65.
     pub fish_speed: f64,
+    /// Surge duration in seconds before jitter, 0.5..=3.0.
     pub surge: f64,
+    /// Rest duration in seconds before jitter, 0.4..=3.0.
     pub rest: f64,
+    /// Energy loss coefficient per second, 0.03..=0.25.
     pub fatigue: f64,
+    /// Energy recovery coefficient per second, 0.05..=0.4.
     pub recovery: f64,
+    /// Hook opportunity in seconds, 0.5..=2.0; expiry takes precedence over input.
     pub bite_window: f64,
+    /// Preferred vertical target center, 0.2..=0.8.
     pub target_center: f64,
+    /// Vertical target distribution scale, 0.2..=1.0.
     pub target_spread: f64,
+    /// Vertical target wander during rest, 0.03..=0.3.
     pub rest_wander: f64,
+    /// Host-defined bait preference key, at most 64 UTF-8 bytes.
     pub preference: String,
+    /// Positive base selection weight, at least `f64::MIN_POSITIVE` and at most 10.
     pub pond_weight: f64,
 }
 impl Fish {
+    /// Check finite values, inclusive bounds and cross-field constraints.
+    /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
         bounded(self.strength, 0.4, 1.6, "fish.strength")?;
         bounded(self.fish_speed, 0.15, 0.65, "fish.fishSpeed")?;
@@ -37,17 +57,30 @@ impl Fish {
         Ok(())
     }
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+/// Rod handling tradeoffs applied by [`resolve`].
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(deny_unknown_fields, rename_all = "camelCase")
+)]
 pub struct Rod {
+    /// Tackle window side length in normalized units, 0.12..=0.45.
     pub window_size: f64,
+    /// Maximum progress gain per second, 0.02..=0.2.
     pub reel_rate: f64,
+    /// Divisor converting pull into normalized strain, 1.0..=2.0.
     pub line_capacity: f64,
+    /// Control acceleration in normalized units per second squared, 1.8..=5.0.
     pub tackle_acceleration: f64,
+    /// Velocity damping coefficient per second, 2.5..=6.0.
     pub tackle_damping: f64,
+    /// Maximum tackle speed in normalized units per second, 0.55..=1.1.
     pub tackle_speed: f64,
 }
 impl Rod {
+    /// Check finite values, inclusive bounds and cross-field constraints.
+    /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
         bounded(self.window_size, 0.12, 0.45, "rod.windowSize")?;
         bounded(self.reel_rate, 0.02, 0.2, "rod.reelRate")?;
@@ -58,14 +91,24 @@ impl Rod {
         Ok(())
     }
 }
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+/// Bite timing and preference weights applied by [`resolve`] and [`select`].
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(deny_unknown_fields, rename_all = "camelCase")
+)]
 pub struct Bait {
+    /// Waiting-time divisor, 0.5..=2.5.
     pub attraction: f64,
+    /// Additional hook time in seconds, 0..=0.5.
     pub bite_bonus: f64,
+    /// Up to 64 preference multipliers in `f64::MIN_POSITIVE`..=5; missing keys use 1.
     pub affinity: BTreeMap<String, f64>,
 }
 impl Bait {
+    /// Check finite values, inclusive bounds and cross-field constraints.
+    /// Returns a diagnostic error without modifying the value.
     pub fn validate(&self) -> Result<()> {
         bounded(self.attraction, 0.5, 2.5, "bait.attraction")?;
         bounded(self.bite_bonus, 0.0, 0.5, "bait.biteBonus")?;
@@ -81,39 +124,67 @@ impl Bait {
         Ok(())
     }
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
+/// Base rules before applying a fish, rod and bait loadout.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(deny_unknown_fields, rename_all = "camelCase")
+)]
 pub struct Definition {
+    /// Hook-only, pressure/release, or spatial tracking.
     pub mode: Mode,
+    /// 0 for hook/pressure; 1 or 2 for tracking.
     pub dimensions: u8,
-    #[serde(default)]
+    /// Base numeric tuning; defaults apply when omitted during deserialization.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub parameters: Parameters,
+    /// Rectangle, or a polygon for two-dimensional tracking.
     pub capture: Capture,
-    #[serde(default)]
+    /// Mode-specific hook bonus in seconds, 0..=0.5.
+    #[cfg_attr(feature = "serde", serde(default))]
     pub hook_bonus: f64,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// The three profiles used to resolve an encounter.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub struct Loadout {
+    /// Selected fish profile.
     pub fish: Fish,
+    /// Selected rod profile.
     pub rod: Rod,
+    /// Selected bait profile.
     pub bait: Bait,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Validated resolved rules and seed. Persist these alongside a recording.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub struct Encounter {
+    /// Wire schema revision; currently [`crate::VERSION`].
     pub version: u32,
+    /// Validated numeric rules for this encounter.
     pub config: Config,
+    /// Seed to pass to the next operation; resolution does not consume it.
     pub seed: u32,
+    /// Human-readable diagnostics for capped timing values; wording is not normative.
     pub notes: Vec<String>,
 }
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
+/// Weighted pond draw, including the next seed and normalized probabilities.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(feature = "serde", serde(deny_unknown_fields))]
 pub struct Selection {
+    /// Index of the selected fish in the original pool.
     pub index: usize,
+    /// RNG state after exactly one draw; carry this into encounter resolution.
     pub seed: u32,
+    /// Normalized selection probability for each pool entry, in original order.
     pub odds: Vec<f64>,
 }
+/// Draw from 1..=64 fish using base weights multiplied by bait affinity.
+/// Consumes exactly one RNG draw. Rejects invalid profiles or underflowed weights.
 pub fn select(pool: &[Fish], bait: &Bait, seed: u32) -> Result<Selection> {
     if pool.is_empty() || pool.len() > 64 {
         return Err("pool requires 1..64 fish".into());
@@ -151,6 +222,9 @@ fn cap(value: f64, min: f64, max: f64, name: &str, notes: &mut Vec<String>) -> f
     }
     n
 }
+/// Apply active profile attributes to base rules and validate the resulting configuration.
+/// Timing is capped to protocol bounds with notes; inactive attributes do nothing.
+/// This pure operation does not consume randomness or mutate its inputs.
 pub fn resolve(d: &Definition, l: &Loadout, seed: u32) -> Result<Encounter> {
     l.fish.validate()?;
     l.rod.validate()?;

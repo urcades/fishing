@@ -1,14 +1,27 @@
 //! Normalized geometry. No SVG, trigonometry, render APIs or named shapes.
 use crate::types::{bounded, Result};
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
+/// A normalized `[x, y]` position.
 pub type Point = [f64; 2];
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+/// Capture geometry in a normalized unit square; independent of SVG or any renderer.
+#[derive(Debug, Clone, PartialEq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+#[cfg_attr(
+    feature = "serde",
+    serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)
+)]
 pub enum Capture {
+    /// Axis-aligned square with side length given by the tackle window.
     Rectangle,
-    Polygon { rings: Vec<Vec<Point>> },
+    /// One simple outer ring and an optional strictly interior hole.
+    /// Each ring has 3..=48 vertices in 0..=1; winding direction is irrelevant.
+    Polygon {
+        /// Outer boundary first, then optional hole; validated before simulation.
+        rings: Vec<Vec<Point>>,
+    },
 }
-pub fn area(points: &[Point]) -> f64 {
+fn area(points: &[Point]) -> f64 {
     if points.is_empty() {
         return 0.0;
     }
@@ -56,6 +69,7 @@ fn inside(p: Point, ring: &[Point]) -> bool {
     }
     hit
 }
+/// Reject out-of-bounds, degenerate, intersecting or improperly nested rings.
 pub fn validate_capture(c: &Capture) -> Result<()> {
     let Capture::Polygon { rings } = c else {
         return Ok(());
@@ -144,11 +158,16 @@ fn clip(points: Vec<Point>, axis: usize, bound: f64, greater: bool) -> Vec<Point
     }
     out
 }
+/// Fraction of a fish interval covered by the tackle window.
+/// Inputs must be finite and `size`/`radius` positive; this low-level helper does not validate.
 pub fn interval_alignment(fish: f64, tackle: f64, size: f64, radius: f64) -> f64 {
     let overlap =
         (fish + radius).min(tackle + size / 2.0) - (fish - radius).max(tackle - size / 2.0);
     (overlap / (2.0 * radius)).clamp(0.0, 1.0)
 }
+/// Fraction of a fish square covered by normalized capture geometry, in 0..=1.
+/// Pass a validated capture, finite positions and positive `size`/`radius`.
+/// This low-level helper does not validate; [`crate::step`] validates before use.
 pub fn alignment(c: &Capture, fish: Point, tackle: Point, size: f64, radius: f64) -> f64 {
     if matches!(c, Capture::Rectangle) {
         return interval_alignment(fish[0], tackle[0], size, radius)
