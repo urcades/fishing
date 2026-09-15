@@ -1,4 +1,4 @@
-use fishing_protocol::{geometry::Capture, *};
+use fishing::{geometry::Capture, *};
 
 fn config(mode: Mode, dimensions: u8) -> Config {
     Config {

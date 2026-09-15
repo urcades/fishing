@@ -6,12 +6,12 @@ no unsafe code, no clock, renderer, runtime, or hidden randomness.
 
 ```toml
 [dependencies]
-fishing-protocol = "0.1.0"
+fishing = "0.1.0"
 ```
 
 ```rust
-use fishing_protocol::{create_state, step, Config, Input, Mode, Parameters, Phase};
-use fishing_protocol::geometry::Capture;
+use fishing::{create_state, step, Config, Input, Mode, Parameters, Phase};
+use fishing::geometry::Capture;
 
 let rules = Config {
     mode: Mode::Tracking,

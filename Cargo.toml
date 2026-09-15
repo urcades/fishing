@@ -1,5 +1,5 @@
 [package]
-name = "fishing-protocol"
+name = "fishing"
 version = "0.1.0"
 edition = "2021"
 description = "Pure, bounded state machines and coupled dynamics for casual fishing minigames"
